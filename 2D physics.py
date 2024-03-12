@@ -2,239 +2,289 @@ import math
 import pygame
 import random
 
-PARTICLE_RADIUS = 4
-PARTICLE_MASS = 1
+pygame.display.init()
+pygame.font.init()
 
-class Physics:
-
-    def __init__(self, width, height) -> None:
-        self.width = width
-        self.height = height
-
-        self.particle_grid = {}
-        self.particles = []
-        self.grid_size = 2 * PARTICLE_RADIUS
-        self.gravity = 0.1
-        self.movement_steps = 10
-
-        self.energy_loss = 0.95
-
-        self.count = 0
-
-    def draw(self, screen):
-        for particle in self.particles:
-            pygame.draw.circle(screen, particle.colour, particle.position, particle.radius)
-            #x = particle.x + (math.cos(particle.direction) * particle.velocity)
-            #y = particle.y + (math.sin(particle.direction) * particle.velocity)
-
-            #pygame.draw.line(screen, (0, 255, 0), particle.position, (x, y))
-
-    def add_particle(self, particle):
-        x, y = particle.position
-        gridx, gridy = math.floor(x / self.grid_size), math.floor(y / self.grid_size)
-
-        if particle in self.particles: 
-            self.particle_grid[particle.grid_pos].remove(particle)
-
-        if particle not in self.particles:
-            self.particles.append(particle)
-
-        particle.set_grid(gridx, gridy)
-        if (gridx, gridy) in self.particle_grid.keys(): self.particle_grid[(gridx, gridy)].append(particle)
-        else: self.particle_grid[(gridx, gridy)] = [particle]
-
-    def distance_to(self, x1, y1, x2, y2):
-        dx = math.pow(x1 - x2, 2)
-        dy = math.pow(y1 - y2, 2)
-        return math.pow(dy + dx, 0.5)
-
-    def resolve_collision(self, p1, p2):
-        if p1 == p2: return
-        m1, d1 = p1.momentum, p1.direction
-        m2, d2 = p2.momentum, p2.direction
-
-        v1 = m2 * self.energy_loss / p1.mass
-        v2 = m1 * self.energy_loss / p2.mass
-
-        p1.set_velocity(v1)
-        p1.set_direction(d2)
-
-        p2.set_velocity(v2)
-        p2.set_direction(d1)
-
-        overlap = (p1.radius + p2.radius) - self.distance_to(p1.x, p1.y, p2.x, p2.y)
-        angle = math.atan2(p1.y - p2.y, p1.x - p2.x)
-        if overlap > 0:
-            p1.add_position(math.cos(angle) * overlap / 2, math.sin(angle) * overlap / 2)
-            p2.add_position(-math.cos(angle) * overlap / 2, -math.sin(angle) * overlap / 2)
-
-    def check_boundry(self, particle):
-        x, y = particle.position
-        vx, vy = particle.velocity_vector
-        vel = particle.velocity
-
-        if y <= particle.radius:
-            y = particle.radius
-            vy *= -1
-            vel *= self.energy_loss
-
-        elif y >= self.height - particle.radius:
-            y = self.height - particle.radius
-            vy *= -1
-            vel *= self.energy_loss
-
-        if x <= particle.radius:
-            self.x = particle.radius
-            vx *= -1
-            vel *= self.energy_loss
-
-        elif x >= self.width - particle.radius:
-            self.x = self.width - particle.radius
-            vx *= -1
-            vel *= self.energy_loss
-
-        particle.set_position(x, y)
-        particle.set_velocity_vector(vx, vy)
-        particle.set_velocity(vel)
-
-    def check_collisions(self, particle):
-        gridx, gridy = particle.grid_pos
-        if gridx == None: print(particle)
-        for i in range(-1, 2):
-            for j in range(-1, 2):
-                if (gridx + i, gridy + j) not in self.particle_grid: continue
-                for other_particle in self.particle_grid[(gridx + i, gridy + j)]:
-                    if particle.check_collision(other_particle): 
-                        return other_particle
-                    
-        return False
-
-    def step_movement(self, particle, dt):
-
-        vx, vy = particle.velocity_vector
-        stepvx, stepvy = vx / self.movement_steps, vy / self.movement_steps
-
-        for _ in range(self.movement_steps):
-            particle.add_position(stepvx * dt, stepvy * dt)
-            collided = self.check_collisions(particle)
-            if collided:
-                self.resolve_collision(particle, collided)
-                break
-        
-        self.check_boundry(particle)
-        self.add_particle(particle)
-
-    def update_particles(self, dt):
-        self.count += 1
-        for particle in self.particles:
-            particle.add_velocity_vector(0, self.gravity)
-            self.step_movement(particle, dt)
-
+RADIUS = 10
+WHITE = (255, 255, 255)
 
 class Particle:
 
-    ID = 0
+    def __init__(self, x, y, radius, colour, mass, charge, Tc = 273, Pc = 1) -> None:
+        self.x = x # pixels
+        self.y = y # pixels
+        self.radius = radius * Physics.UNITS_DISTANCE #units
+        self.colour = colour 
+        self.mass = mass * Physics.UNITS_MASS #units
+        self.charge = charge * Physics.UNITS_CHARGE #units
+        self.critical_temperature = Tc #kelvin
+        self.critical_pressure = Pc #pa
 
-    def __init__(self, x, y, radius = PARTICLE_RADIUS, mass = PARTICLE_MASS, colour = (255, 0, 0), velocity = 0, direction = 0, ID = None) -> None:
-        self.ID = Particle.ID + 1 
-        self.x = x
-        self.y = y
-        self.radius = radius
-        self.mass = mass
-        self.colour = colour
+        self.vx = 0 #m/s
+        self.vy = 0 #m/s
 
-        self.gridx = math.floor(x / (2 * PARTICLE_RADIUS))
-        self.gridy = math.floor(y / (2 * PARTICLE_RADIUS))
-
-        self.velocity = velocity
-        self.direction = direction
-
-        Particle.ID += 1
-
-    def __str__(self) -> str:
-        return str(self.ID)
-    
-    def __repr__(self) -> str:
-        return str(self.ID)
-
-    def add_position(self, dx, dy):
-        self.x += dx
-        self.y += dy
-
-    def set_position(self, x, y):
-        self.x = x
-        self.y = y
-
-    def set_velocity(self, velocity):
-        self.velocity = velocity
-
-    def set_direction(self, direction):
-        self.direction = direction
-
-    def set_velocity_vector(self, vx, vy):
-        self.direction = math.atan2(vy, vx)
-        self.velocity = math.pow(math.pow(vx, 2) + math.pow(vy, 2), 0.5)
-
-    def add_velocity_vector(self, vx_, vy_):
-        vx, vy = self.velocity_vector
-        self.direction = math.atan2(vy + vy_, vx + vx_)
-        self.velocity = math.pow(math.pow(vx + vx_, 2) + math.pow(vy + vy_, 2), 0.5)
-
-    def set_grid(self, gridx, gridy):
-        self.gridx = gridx
-        self.gridy = gridy
+        Physics.add_particle(self)
+        Window.add_particle(self)
 
     @property
-    def grid_pos(self):
-        return (self.gridx, self.gridy)
+    def area(self):
+        return math.pi * math.pow(self.radius, 2)
 
     @property
-    def momentum(self):
-        return self.velocity * self.mass
+    def speed_squared(self):
+        return math.pow(self.vy, 2) + math.pow(self.vx, 2)
 
-    @property
-    def position(self):
-        return (self.x, self.y)
-    
-    @property
-    def velocity_vector(self):
-        return (math.cos(self.direction) * self.velocity, math.sin(self.direction) * self.velocity)
-    
-    def check_collision(self, particle):
-        px, py = particle.position
-        dx = math.pow(px - self.x, 2)
-        dy = math.pow(py - self.y, 2)
-        if dy + dx <= math.pow(self.radius + particle.radius, 2):
+    def collide_point(self, position):
+        x = self.x - position[0]
+        y = self.y - position[1]
+        distance_2 = (math.pow(x, 2) + math.pow(y, 2)) * math.pow(Physics.UNITS_DISTANCE, 2)
+        if math.pow(self.radius, 2) > distance_2:
             return True
         
         return False
+
+    def __repr__(self) -> str:
+        return f"Mass: {self.mass}, Charge: {self.charge}"
     
-if __name__ == "__main__":
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    def __str__(self) -> str:
+        return f"Mass: {self.mass}, Charge: {self.charge}"
+    
+    def draw(self):
+        pygame.draw.circle(Window.window, self.colour, (self.x, self.y), (self.radius / Physics.UNITS_DISTANCE), 5)
+
+    def check_collisions(self):
+        for particle in Physics.particles:
+            if particle == self: continue
+            px, py, pr = particle.x, particle.y, particle.radius
+            distance_2 = (math.pow(px - self.x, 2) + math.pow(py - self.y, 2)) * math.pow(Physics.UNITS_DISTANCE, 2)
+            if math.pow(self.radius + pr, 2) > distance_2:
+                Physics.collision(self, particle)
+    
+    def update(self):
+        pixel_radius = self.radius / Physics.UNITS_DISTANCE
+        ax, ay = self.calculate_acceleration()
+        self.vx += ax * Window.delta_time
+        self.vy += ay * Window.delta_time
+
+        self.x += self.vx * Window.delta_time / Physics.UNITS_DISTANCE
+        self.y += self.vy * Window.delta_time / Physics.UNITS_DISTANCE
+
+        if self.x < pixel_radius or self.x > Physics.width - pixel_radius:
+            self.vx *= -Physics.ENERGY_LOSS
+            self.x = pixel_radius if self.x < pixel_radius else Physics.width - pixel_radius
+
+        if self.y < pixel_radius or self.y > Physics.height - pixel_radius:
+            self.vy *= -Physics.ENERGY_LOSS
+            self.y = pixel_radius if self.y < pixel_radius else Physics.height - pixel_radius
+
+        self.check_collisions()
+    
+    def calculate_force_gravitation(self):
+        total_f_y = 0
+        total_f_x = 0
+        for particle in Physics.particles:
+            if particle == self: continue
+            distance_2 = (math.pow(self.x - particle.x, 2) + math.pow(self.y - particle.y, 2)) * math.pow(Physics.UNITS_DISTANCE, 2)
+            angle = math.atan2(particle.y - self.y, particle.x - self.x)
+            force = Physics.G * particle.mass * self.mass / distance_2 if distance_2 > 0 else 0
+            force_y = math.sin(angle) * force
+            force_x = math.cos(angle) * force
+            total_f_y += force_y
+            total_f_x += force_x
+
+        return (total_f_x, total_f_y) 
+
+    def calculate_force_electrostatic(self):
+        total_f_y = 0
+        total_f_x = 0
+        for particle in Physics.particles:
+            if particle == self: continue
+            distance_2 = (math.pow(self.x - particle.x, 2) + math.pow(self.y - particle.y, 2)) * math.pow(Physics.UNITS_DISTANCE, 2)
+            angle = math.atan2(particle.y - self.y, particle.x - self.x)
+            force = -Physics.k * particle.charge * self.charge / distance_2 if distance_2 > 0 else 0
+            force_y = math.sin(angle) * force
+            force_x = math.cos(angle) * force
+            total_f_y += force_y
+            total_f_x += force_x
+        
+        return (total_f_x, total_f_y)
+
+    def calculate_acceleration(self):
+        fgx, fgy = self.calculate_force_gravitation()
+        fex, fey = self.calculate_force_electrostatic()
+        fx = fgx + fex
+        fy = fgy + fey
+
+        ax = fx / self.mass
+        ay = fy / self.mass
+
+        return (ax, ay)
+    
+class Overlay:
+
+    font = pygame.sysfont.SysFont("Roman", 20)
+
+    @classmethod
+    def draw(cls):
+        temperature = Physics.calculate_temperature()
+        pressure = Physics.calculate_pressure()
+        fps_render = cls.font.render(f"FPS: {Window.get_fps()}", False, (255, 0, 0))
+        temp_render = cls.font.render(f"Temperature: {round(temperature, 1000)}K", False, (0, 0, 0))
+        pressure_render = cls.font.render(f"Pressure: {round(pressure, 1000)}Pa", False, (0, 0, 0))
+        distance_render = cls.font.render(f"1 Pixel: {Physics.UNITS_DISTANCE}m", False, (0, 0, 0))
+
+        ui_elements = [fps_render, temp_render, pressure_render, distance_render]
+        for i, ui in enumerate(ui_elements):
+            Window.window.blit(ui, (0, i*(temp_render.get_size()[1] + 5)))
+
+class Window:
+
+    particles = []
+    window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     clock = pygame.time.Clock()
-    width, height = screen.get_size()
     running = True
+    physics = True
 
-    physics = Physics(width, height)
-    for _ in range(1000):
-        p = Particle(random.randint(0, width), random.randint(0, height), direction = random.uniform(0, 2 * math.pi), velocity = random.uniform(0, 10))
-        physics.add_particle(p)
+    width, height = window.get_size()
+    delta_time = 1
 
-    while running:
+    @classmethod
+    def get_fps(cls):
+        return round(cls.clock.get_fps())
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-                break
+    @classmethod
+    def add_particle(cls, particle):
+        cls.particles.append(particle)
 
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
-                break
-        
-        screen.fill((0, 0, 0))
-        physics.draw(screen)
+    @classmethod
+    def mainloop(cls):
+        particle_track = None
+        while cls.running:
 
-        physics.update_particles(1)
-        
-        pygame.display.flip()
-        clock.tick(60)
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        cls.running = False
+
+                    if event.key == pygame.K_SPACE:
+                        cls.physics = not cls.physics
+
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    collided = False
+                    for particle in cls.particles:
+                        if particle.collide_point(event.pos): 
+                            print(particle)
+                            particle_track = particle
+                            collided = True
+                    
+                    if not collided:
+                        particle_track = None
+
+            cls.window.fill(WHITE)
+
+            if cls.physics:
+
+                for particle in cls.particles:
+                    particle.update()
+
+                Physics.handle_collisions()
+
+            for particle in cls.particles:
+                particle.draw()
+
+            Overlay.draw()
+
+            pygame.display.flip()
+            cls.clock.tick(0)
+
+class Physics:
+
+    particles = []
+    collisions = []
+
+    G = 6.67 * math.pow(10, -11)
+    k = 8.99 * math.pow(10, 9)
+    R = 8.314
+    boltzmann = 1.38 * math.pow(10, -23)
+    avagadro = 6.02 * math.pow(10, 23)
+
+    UNITS_MASS = 1 * math.pow(10, -26) #kg
+    UNITS_CHARGE = 1.6 * math.pow(10, -19) #C
+    UNITS_DISTANCE = math.pow(10, 0) #m
+    ENERGY_LOSS = 1
+
+    width, height = Window.width, Window.height
+
+    @classmethod
+    def calculate_temperature(cls):
+        total_mass = 0
+        total_speed_squared = 0
+        num_particles = len(cls.particles)
+        for particle in cls.particles:
+            total_mass += particle.mass
+            total_speed_squared += particle.speed_squared
+
+        mean_mass = total_mass / num_particles
+        mean_speed_squared = total_speed_squared / num_particles
+        return mean_mass * mean_speed_squared / (3 * Physics.k)
+    
+    @classmethod
+    def calculate_pressure(cls):
+        total_mass = 0
+        total_speed_squared = 0
+        num_particles = len(cls.particles)
+        area = cls.width * cls.height * math.pow(Physics.UNITS_DISTANCE, 2)
+        for particle in cls.particles:
+            total_mass += particle.mass
+            total_speed_squared += particle.speed_squared
+
+        mean_mass = total_mass / num_particles
+        mean_speed_squared = total_speed_squared / num_particles
+        return (1/3) * num_particles * mean_mass * mean_speed_squared * (1/area)
+
+    @classmethod
+    def collision(cls, p1, p2):
+        if not ((p1, p2) in cls.collisions or (p2, p1) in cls.collisions):
+            cls.collisions.append((p1, p2))
+
+    @classmethod
+    def handle_collisions(cls):
+        for p1, p2 in cls.collisions:
+            distance = math.dist((p1.x, p1.y), (p2.x, p2.y)) * Physics.UNITS_DISTANCE
+            overlap = p1.radius + p2.radius - distance
+            angle = math.atan2(p1.y - p2.y, p1.x - p2.x)
+            vx1, vy1 = p1.vx, p1.vy
+            vx2, vy2 = p2.vx, p2.vy
+
+            #OVERLAP
+            p2.y -= overlap * math.sin(angle) / (2*Physics.UNITS_DISTANCE)
+            p2.x -= overlap * math.cos(angle) / (2*Physics.UNITS_DISTANCE)
+            p1.y -= overlap * math.cos(angle) / (2*Physics.UNITS_DISTANCE)
+            p1.x -= overlap * math.sin(angle) / (2*Physics.UNITS_DISTANCE)
+
+            #VELOCITY
+            y = (p2.y - p1.y + 0.00000001) / abs(p2.y - p1.y + 0.00000001)
+            x = (p2.x - p1.x + 0.00000001) / abs(p2.x - p1.x + 0.00000001)
+
+            p2.vy = y * abs(vy2)
+            p2.vx = x * abs(vx2)
+
+            p1.vy = -y * abs(vy1)
+            p1.vx = -x * abs(vx1)
+
+        cls.collisions.clear()
+
+    @classmethod
+    def add_particle(cls, particle: Particle):
+        cls.particles.append(particle)                 
+
+for i in range(100):
+    x = random.randint(0, 1500)
+    y = random.randint(0, 1500)
+    mass = random.randint(1, 100)
+    charge = random.randint(1, 100)
+    p = Particle(x, y, RADIUS, (mass * 255/100, abs(charge) * 255/100, random.randint(0, 255)), mass, charge)
+
+#ADD TEMP
+
+Window.mainloop()
